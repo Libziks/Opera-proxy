@@ -1,93 +1,109 @@
 # 🎭 Opera Proxy для Keenetic
 
-Локальный HTTP-прокси через серверы **Opera VPN (SurfEasy)** — без регистрации, без приложений.  
-Трафик идёт через **TLS/443** → выглядит как обычный HTTPS, обходит блокировки РКН.
+Быстрый локальный **SOCKS5-прокси** через инфраструктуру **Opera VPN (SurfEasy)**.  
+Работает без сторонних приложений, маскирует TLS-рукопожатие под незаблокированный домен (SNI `2gis.com`) и обходит фильтрацию ТСПУ/DPI в РФ.
 
 ```
-Устройство → HTTP :18080 → opera-proxy → TLS 443 → *.sec-tunnel.com → 🌍
+Устройство / Роутер → SOCKS5 :1080 → opera-proxy (SNI 2gis.com + DoH) → TLS 443 → *.sec-tunnel.com → 🌍
 ```
 
 ---
 
 ## ⚡ Установка
 
-```
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/Libzik/Opera-proxy/refs/heads/main/install.sh)"
+Выполните команду в терминале роутера (SSH / Entware):
 
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/Libziks/Opera-proxy/main/install.sh)"
 ```
 
-Скрипт сам определит архитектуру (`aarch64` / `mips` / `mipsel`), установит пакет,  
-создаст автозапуск, watchdog и интерфейс **Proxy0** в Keenetic OS.
+**Что скрипт делает автоматически:**
+- 🔍 Определяет архитектуру процессора (`aarch64`, `armv7`, `mips`, `mipsel`);
+- 📦 Устанавливает пакет `opera-proxy` и настраивает DoH-резолвер для обхода блокировок API;
+- 🛡️ Активирует обфускацию TLS (маскировка под `2gis.com`);
+- 🔌 Находит первый свободный слот (`Proxy0`, `Proxy1`...), не затирая существующие прокси;
+- 🌐 Создаёт в KeeneticOS интерфейс **Opera** с активной опцией **«Использовать для выхода в Интернет»** (без конфликтующего UDP).
 
 ---
 
-## 🌐 Регионы
+## ⚙️ Настройка
 
-| Код | Регион |
-|-----|--------|
-| `EU` | 🇪🇺 Европа (по умолчанию) |
-| `AS` | 🌏 Азия |
-| `AM` | 🌎 Америка |
+Все параметры меняются в одном конфигурационном файле `/opt/etc/opera-proxy.conf`:
 
-Сменить регион:
 ```sh
-# В /opt/etc/init.d/S99opera-proxy найди ARGS и измени -country
-ARGS="-country AS -bind-address 127.0.0.1:18080 -verbosity 20"
-/opt/etc/init.d/S99opera-proxy restart
+nano /opt/etc/opera-proxy.conf
+```
+
+| Параметр | По умолчанию | Описание |
+| :--- | :--- | :--- |
+| `COUNTRY` | `"EU"` | Регион подключения: `EU` (Европа), `AM` (Америка), `AS` (Азия) |
+| `BIND_ADDR` | `"0.0.0.0"` | `0.0.0.0` — доступен всей домашней сети, `127.0.0.1` — только роутеру |
+| `BIND_PORT` | `"1080"` | Локальный порт SOCKS5 |
+| `OBFUSCATE` | `"yes"` | Включение маскировки SNI (`yes` / `no`) |
+| `FAKE_SNI` | `"2gis.com"` | Домен для маскировки TLS-рукопожатия |
+| `BOOTSTRAP_DNS` | *Google/Cloudflare* | Защищённый DoH для первичного поиска серверов |
+
+После сохранения изменений примените настройки:
+```sh
+/opt/etc/init.d/S*opera-proxy restart
 ```
 
 ---
 
-## 🔧 Управление
+## 🎮 Управление службой
 
 ```sh
-/opt/etc/init.d/S99opera-proxy start    # запуск
-/opt/etc/init.d/S99opera-proxy stop     # остановка
-/opt/etc/init.d/S99opera-proxy restart  # перезапуск
-/opt/etc/init.d/S99opera-proxy check    # жив ли процесс
+/opt/etc/init.d/S*opera-proxy start    # Запуск
+/opt/etc/init.d/S*opera-proxy stop     # Остановка
+/opt/etc/init.d/S*opera-proxy restart  # Перезапуск
+/opt/etc/init.d/S*opera-proxy check    # Проверка статуса процесса
 ```
 
 ---
 
-## ✅ Проверка
+## 📡 Использование
+
+### 1. На роутере (KeeneticOS)
+- Подключение доступно в меню **«Другие подключения»** → раздел **«Прокси»** под именем **Opera**.
+- Для выборочной маршрутизации устройств или доменов перейдите в **«Сетевые правила» → «Приоритеты подключений»** и привяжите интерфейс **Opera** к нужной политике.
+
+> ⚠️ **Важно (только TCP):** Сеть Opera **не поддерживает UDP**. Для стабильной работы сайтов добавьте DoH-сервер (например, `https://dns.google/dns-query`) в веб-интерфейсе Keenetic: **«Сетевые правила» → «DNS»**.
+
+### 2. На устройствах в локальной сети (вручную)
+В настройках прокси браузера / Telegram / ОС укажите:
+* **Тип:** `SOCKS5`
+* **Адрес:** IP-адрес роутера (например, `192.168.1.1`)
+* **Порт:** `1080`
+
+---
+
+## ✅ Проверка работы
+
+Серверам Opera требуется **10–15 секунд** после запуска на поиск и тестирование лучшего узла.
 
 ```sh
-# Должен вернуть европейский IP
-curl -x http://127.0.0.1:18080 https://ifconfig.me
+# Проверка внешнего IP через прокси:
+curl -fsSL --socks5-hostname 127.0.0.1:1080 https://api.ipify.org
 
-# Логи
+# Просмотр журнала подключения:
 logread | grep -i opera
 ```
-
----
-
-## 📡 Использование на устройствах в LAN
-
-**Через Keenetic** — в веб-интерфейсе появится интерфейс **Proxy0**,  
-назначь его нужным устройствам через **Приоритет подключений**.
-
-**Вручную на устройстве** — укажи прокси:
-```
-HTTP  192.168.1.1 : 18080
-```
-> Для этого в init-скрипте замени `127.0.0.1` → `0.0.0.0` в ARGS и перезапусти.
 
 ---
 
 ## 🗑️ Удаление
 
 ```sh
-/opt/etc/init.d/S99opera-proxy stop
-rm -f /opt/etc/init.d/S99opera-proxy
-sed -i '/opera-proxy/d' /opt/var/spool/cron/crontabs/root
+/opt/etc/init.d/S*opera-proxy stop
+rm -f /opt/etc/init.d/S*opera-proxy /opt/etc/opera-proxy.conf
 opkg remove opera-proxy
 rm -f /opt/etc/opkg/sw.ext.io.conf
-ndmc -c "no interface Proxy0"
+ndmc -c "no interface $(ndmc -c 'show running-config' | awk '/^interface Proxy[0-9]+/ {cur=$2} /description.*Opera/ {print cur; exit}')"
 ndmc -c "system configuration save"
 ```
 
 ---
 
-## 🔗 Ссылки
+## 🔗 Источники
 
-- [opera-proxy (форк для роутеров)](https://github.com/Alexey71/opera-proxy)
+- Ядро прокси: [Alexey71/opera-proxy](https://github.com/Alexey71/opera-proxy) (форк с поддержкой SNI и DoH)
