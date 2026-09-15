@@ -45,7 +45,7 @@ nano /opt/etc/opera-proxy.conf
 
 После сохранения изменений примените настройки:
 ```sh
-/opt/etc/init.d/S*opera-proxy restart
+/opt/etc/init.d/S99opera-proxy restart
 ```
 
 ---
@@ -53,10 +53,10 @@ nano /opt/etc/opera-proxy.conf
 ## 🎮 Управление службой
 
 ```sh
-/opt/etc/init.d/S*opera-proxy start    # Запуск
-/opt/etc/init.d/S*opera-proxy stop     # Остановка
-/opt/etc/init.d/S*opera-proxy restart  # Перезапуск
-/opt/etc/init.d/S*opera-proxy check    # Проверка статуса процесса
+/opt/etc/init.d/S99opera-proxy start    # Запуск
+/opt/etc/init.d/S99opera-proxy stop     # Остановка
+/opt/etc/init.d/S99opera-proxy restart  # Перезапуск
+/opt/etc/init.d/S99opera-proxy check    # Проверка статуса процесса
 ```
 
 ---
@@ -65,7 +65,7 @@ nano /opt/etc/opera-proxy.conf
 
 ### 1. На роутере (KeeneticOS)
 - Подключение доступно в меню **«Другие подключения»** → раздел **«Прокси»** под именем **Opera**.
-- Для выборочной маршрутизации устройств или доменов перейдите в **«Сетевые правила» → «Приоритеты подключений»** и привяжите интерфейс **Opera** к нужной политике.
+- Для выборочной доменов перейдите в **«Маршрутизация» → «Маршруты DNS»** и привяжите интерфейс **Opera** к нужному списку.
 
 > ⚠️ **Важно (только TCP):** Сеть Opera **не поддерживает UDP**. Для стабильной работы сайтов добавьте DoH-сервер (например, `https://dns.google/dns-query`) в веб-интерфейсе Keenetic: **«Сетевые правила» → «DNS»**.
 
@@ -107,3 +107,4 @@ ndmc -c "system configuration save"
 ## 🔗 Источники
 
 - Ядро прокси: [Alexey71/opera-proxy](https://github.com/Alexey71/opera-proxy) (форк с поддержкой SNI и DoH)
+- Пакет для установки https://sw.ext.io/
