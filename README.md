@@ -92,8 +92,8 @@ logread | grep -i opera
 ## 🗑️ Удаление
 
 ```sh
-/opt/etc/init.d/S*opera-proxy stop
-rm -f /opt/etc/init.d/S*opera-proxy /opt/etc/opera-proxy.conf
+/opt/etc/init.d/S99opera-proxy stop
+rm -f /opt/etc/init.d/S99opera-proxy /opt/etc/opera-proxy.conf
 opkg remove opera-proxy
 rm -f /opt/etc/opkg/sw.ext.io.conf
 ndmc -c "no interface $(ndmc -c 'show running-config' | awk '/^interface Proxy[0-9]+/ {cur=$2} /description.*Opera/ {print cur; exit}')"
