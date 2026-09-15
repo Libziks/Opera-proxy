@@ -2,7 +2,7 @@
 # ================================================================
 #  opera-proxy installer for Keenetic / Entware
 #  Режим: SOCKS5 (-socks-mode) с обфускацией SNI (2gis.com)
-#  Интерфейс: автоматический выбор свободного слота ProxyX
+#  Интерфейс: автоматический выбор ProxyX + выход в интернет
 # ================================================================
 
 set -e
@@ -147,7 +147,7 @@ fi
 BIND_PORT="${BIND_PORT:-1080}"
 
 if ! command -v ndmc > /dev/null 2>&1; then
-  warn "Утилита ndmc не найдена — создайте подключение вручную в «Другие подключения»"
+  warn "Утилита ndmc не найдена — настройте подключение вручную в «Другие подключения»"
 else
   info "Поиск доступного Proxy-интерфейса в Keenetic OS..."
   CONF_RUNNING=$(ndmc -c "show running-config" 2>/dev/null || echo "")
@@ -179,16 +179,18 @@ else
   ndmc -c "interface $IFACE proxy protocol socks5" > /dev/null 2>&1
   ndmc -c "no interface $IFACE proxy socks5-udp" > /dev/null 2>&1 || true
   
-  # СБРОС СТАРОЙ АВТОРИЗАЦИИ
+  # Сброс старой авторизации
   ndmc -c "no interface $IFACE authentication" > /dev/null 2>&1 || true
   ndmc -c "no interface $IFACE authentication identity" > /dev/null 2>&1 || true
   ndmc -c "no interface $IFACE authentication password" > /dev/null 2>&1 || true
   
   ndmc -c "interface $IFACE proxy upstream 127.0.0.1 $BIND_PORT" > /dev/null 2>&1
   ndmc -c "interface $IFACE description $IFACE_NAME" > /dev/null 2>&1
+  # ВКЛЮЧАЕМ ГАЛОЧКУ "Использовать для выхода в Интернет":
+  ndmc -c "interface $IFACE ip global auto" > /dev/null 2>&1
   ndmc -c "interface $IFACE up" > /dev/null 2>&1
   ndmc -c "system configuration save" > /dev/null 2>&1
-  ok "Интерфейс '$IFACE_NAME' настроен на $IFACE (без конфликта с другими прокси)"
+  ok "Интерфейс '$IFACE_NAME' настроен на $IFACE (выход в интернет включен)"
 fi
 
 echo ""
@@ -198,6 +200,7 @@ printf "${G}══════════════════════�
 printf "\n"
 printf "  Служба:               Запущена (PID: %s)\n" "$PID"
 printf "  Имя подключения:      %s (%s)\n" "$IFACE_NAME" "$IFACE"
+printf "  Выход в интернет:     Включен (ip global auto)\n"
 printf "  Прокси для клиентов:  socks5://%s:%s\n" "${BIND_ADDR:-0.0.0.0}" "$BIND_PORT"
 printf "  Обфускация:           %s (%s)\n" "${OBFUSCATE:-yes}" "${FAKE_SNI:-2gis.com}"
 printf "\n"
