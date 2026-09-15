@@ -123,7 +123,7 @@ INITEOF
 chmod 755 "$INIT_SCRIPT"
 ok "Init-скрипт готов"
 
-# ── 7. Очистка старого cron (если остался) ────────────────────
+# ── 7. Очистка старого cron ───────────────────────────────────
 CRONTAB_FILE="/opt/var/spool/cron/crontabs/root"
 if [ -f "$CRONTAB_FILE" ] && grep -qF "opera-proxy" "$CRONTAB_FILE" 2>/dev/null; then
   sed -i '/opera-proxy/d' "$CRONTAB_FILE"
@@ -133,7 +133,7 @@ fi
 # ── 8. Запуск сервиса ─────────────────────────────────────────
 info "Запускаем службу opera-proxy..."
 "$INIT_SCRIPT" restart > /dev/null 2>&1 || "$INIT_SCRIPT" start > /dev/null 2>&1
-sleep 3
+sleep 2
 
 PID=$(pidof opera-proxy 2>/dev/null | awk '{print $1}')
 if [ -n "$PID" ]; then
@@ -161,7 +161,7 @@ else
     ')
   fi
   
-  # 2. Если Opera нет — ищем первый СВОБОДНЫЙ ProxyX (не затирая существующие)
+  # 2. Если Opera нет — ищем первый СВОБОДНЫЙ ProxyX
   if [ -z "$IFACE" ]; then
     for i in 0 1 2 3 4 5 6 7 8 9; do
       if ! printf '%s\n' "$CONF_RUNNING" | grep -q "^interface Proxy$i"; then
@@ -179,7 +179,7 @@ else
   ndmc -c "interface $IFACE proxy protocol socks5" > /dev/null 2>&1
   ndmc -c "no interface $IFACE proxy socks5-udp" > /dev/null 2>&1 || true
   
-  # СБРОС СТАРОЙ АВТОРИЗАЦИИ (удаляем мусорные логины/пароли)
+  # СБРОС СТАРОЙ АВТОРИЗАЦИИ
   ndmc -c "no interface $IFACE authentication" > /dev/null 2>&1 || true
   ndmc -c "no interface $IFACE authentication identity" > /dev/null 2>&1 || true
   ndmc -c "no interface $IFACE authentication password" > /dev/null 2>&1 || true
@@ -188,34 +188,26 @@ else
   ndmc -c "interface $IFACE description $IFACE_NAME" > /dev/null 2>&1
   ndmc -c "interface $IFACE up" > /dev/null 2>&1
   ndmc -c "system configuration save" > /dev/null 2>&1
-  ok "Интерфейс '$IFACE_NAME' сохранён на $IFACE (без конфликта с другими прокси)"
+  ok "Интерфейс '$IFACE_NAME' настроен на $IFACE (без конфликта с другими прокси)"
 fi
-
-# ── 10. Проверка подключения ──────────────────────────────────
-info "Проверяем соединение через прокси..."
-sleep 2
-
-REAL_IP=$(curl -fsSL --max-time 8 https://ifconfig.me 2>/dev/null || echo "не определен")
-PROXY_IP=$(curl -fsSL --max-time 12 \
-  --socks5-hostname "127.0.0.1:${BIND_PORT}" \
-  https://ifconfig.me 2>/dev/null || echo "ошибка подключения")
 
 echo ""
 printf "${G}══════════════════════════════════════════════════════════${N}\n"
-printf "${G}  Установка и настройка завершены!${N}\n"
+printf "${G}  Установка и настройка успешно завершены!${N}\n"
 printf "${G}══════════════════════════════════════════════════════════${N}\n"
 printf "\n"
-printf "  Прямой IP роутера:    %s\n" "$REAL_IP"
-printf "  IP через Opera VPN:   %s\n" "$PROXY_IP"
-printf "\n"
+printf "  Служба:               Запущена (PID: %s)\n" "$PID"
 printf "  Имя подключения:      %s (%s)\n" "$IFACE_NAME" "$IFACE"
 printf "  Прокси для клиентов:  socks5://%s:%s\n" "${BIND_ADDR:-0.0.0.0}" "$BIND_PORT"
 printf "  Обфускация:           %s (%s)\n" "${OBFUSCATE:-yes}" "${FAKE_SNI:-2gis.com}"
 printf "\n"
-printf "  Управление сервисом:\n"
-printf "    %s restart\n" "$INIT_SCRIPT"
-printf "    %s stop\n" "$INIT_SCRIPT"
-printf "\n"
 printf "  В веб-интерфейсе Keenetic подключение находится в меню:\n"
 printf "  «Другие подключения» (раздел «Прокси») под именем \"%s\".\n" "$IFACE_NAME"
+printf "\n"
+printf "  ℹ️  Первичное подключение к серверам Opera занимает 10-20 секунд.\n"
+printf "  Проверить соединение вручную чуть позже:\n"
+printf "    curl -fsSL --socks5-hostname 127.0.0.1:%s https://api.ipify.org\n" "$BIND_PORT"
+printf "\n"
+printf "  Посмотреть лог работы:\n"
+printf "    logread | grep -i opera\n"
 printf "\n"
