@@ -2,7 +2,7 @@
 # ================================================================
 #  opera-proxy installer for Keenetic / Entware
 #  Режим: SOCKS5 (-socks-mode) с обфускацией SNI (2gis.com)
-#  Интерфейс в веб-интерфейсе: Opera
+#  Интерфейс: автоматический выбор свободного слота ProxyX
 # ================================================================
 
 set -e
@@ -10,7 +10,6 @@ set -e
 CONF_FILE="/opt/etc/opera-proxy.conf"
 INIT_SCRIPT="/opt/etc/init.d/S99opera-proxy"
 REPO_CONF="/opt/etc/opkg/sw.ext.io.conf"
-IFACE="Proxy0"
 IFACE_NAME="Opera"
 
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'; N='\033[0m'
@@ -98,13 +97,11 @@ info "Создаём init-скрипт $INIT_SCRIPT..."
 cat > "$INIT_SCRIPT" << 'INITEOF'
 #!/bin/sh
 
-# Подгружаем переменные из конфига
 [ -f /opt/etc/opera-proxy.conf ] && . /opt/etc/opera-proxy.conf
 
 ENABLED=yes
 PROCS=opera-proxy
 
-# Формируем флаги
 OPTS="-socks-mode"
 [ -n "$COUNTRY" ] && OPTS="$OPTS -country $COUNTRY"
 [ -n "$BIND_ADDR" ] && [ -n "$BIND_PORT" ] && OPTS="$OPTS -bind-address ${BIND_ADDR}:${BIND_PORT}"
@@ -126,11 +123,11 @@ INITEOF
 chmod 755 "$INIT_SCRIPT"
 ok "Init-скрипт готов"
 
-# ── 7. Очистка старого cron (если остался от прошлого запуска) ─
+# ── 7. Очистка старого cron (если остался) ────────────────────
 CRONTAB_FILE="/opt/var/spool/cron/crontabs/root"
 if [ -f "$CRONTAB_FILE" ] && grep -qF "opera-proxy" "$CRONTAB_FILE" 2>/dev/null; then
   sed -i '/opera-proxy/d' "$CRONTAB_FILE"
-  ok "Старая запись watchdog удалена из crontab"
+  ok "Старый watchdog удален из crontab"
 fi
 
 # ── 8. Запуск сервиса ─────────────────────────────────────────
@@ -142,25 +139,56 @@ PID=$(pidof opera-proxy 2>/dev/null | awk '{print $1}')
 if [ -n "$PID" ]; then
   ok "Успешно запущен (PID: $PID)"
 else
-  die "Процесс не запустился. Посмотрите логи: logread | grep -i opera"
+  die "Процесс не запустился. Проверьте логи: logread | grep -i opera"
 fi
 
-# ── 9. Интерфейс Opera в Keenetic OS ──────────────────────────
-info "Настраиваем интерфейс $IFACE_NAME ($IFACE) в Keenetic OS..."
+# ── 9. Поиск и настройка интерфейса в Keenetic OS ─────────────
 [ -f "$CONF_FILE" ] && . "$CONF_FILE"
 BIND_PORT="${BIND_PORT:-1080}"
 
 if ! command -v ndmc > /dev/null 2>&1; then
-  warn "Утилита ndmc не найдена — добавьте подключение в веб-интерфейсе вручную"
+  warn "Утилита ndmc не найдена — создайте подключение вручную в «Другие подключения»"
 else
+  info "Поиск доступного Proxy-интерфейса в Keenetic OS..."
+  CONF_RUNNING=$(ndmc -c "show running-config" 2>/dev/null || echo "")
+  
+  IFACE=""
+  # 1. Проверяем, есть ли уже интерфейс Opera
+  if [ -n "$CONF_RUNNING" ]; then
+    IFACE=$(printf '%s\n' "$CONF_RUNNING" | awk '
+      /^interface Proxy[0-9]+/ { cur=$2 }
+      /description.*Opera/     { print cur; exit }
+    ')
+  fi
+  
+  # 2. Если Opera нет — ищем первый СВОБОДНЫЙ ProxyX (не затирая существующие)
+  if [ -z "$IFACE" ]; then
+    for i in 0 1 2 3 4 5 6 7 8 9; do
+      if ! printf '%s\n' "$CONF_RUNNING" | grep -q "^interface Proxy$i"; then
+        IFACE="Proxy$i"
+        break
+      fi
+    done
+  fi
+  
+  [ -z "$IFACE" ] && IFACE="Proxy0"
+  info "Используется интерфейс: $IFACE"
+
+  # Настройка интерфейса
   ndmc -c "interface $IFACE" > /dev/null 2>&1 || true
   ndmc -c "interface $IFACE proxy protocol socks5" > /dev/null 2>&1
   ndmc -c "no interface $IFACE proxy socks5-udp" > /dev/null 2>&1 || true
+  
+  # СБРОС СТАРОЙ АВТОРИЗАЦИИ (удаляем мусорные логины/пароли)
+  ndmc -c "no interface $IFACE authentication" > /dev/null 2>&1 || true
+  ndmc -c "no interface $IFACE authentication identity" > /dev/null 2>&1 || true
+  ndmc -c "no interface $IFACE authentication password" > /dev/null 2>&1 || true
+  
   ndmc -c "interface $IFACE proxy upstream 127.0.0.1 $BIND_PORT" > /dev/null 2>&1
   ndmc -c "interface $IFACE description $IFACE_NAME" > /dev/null 2>&1
   ndmc -c "interface $IFACE up" > /dev/null 2>&1
   ndmc -c "system configuration save" > /dev/null 2>&1
-  ok "Интерфейс '$IFACE_NAME' успешно зарегистрирован в KeeneticOS"
+  ok "Интерфейс '$IFACE_NAME' сохранён на $IFACE (без конфликта с другими прокси)"
 fi
 
 # ── 10. Проверка подключения ──────────────────────────────────
@@ -188,6 +216,6 @@ printf "  Управление сервисом:\n"
 printf "    %s restart\n" "$INIT_SCRIPT"
 printf "    %s stop\n" "$INIT_SCRIPT"
 printf "\n"
-printf "  В веб-интерфейсе Keenetic подключение доступно под именем \"%s\"\n" "$IFACE_NAME"
-printf "  («Сетевые правила» → «Приоритеты подключений»).\n"
+printf "  В веб-интерфейсе Keenetic подключение находится в меню:\n"
+printf "  «Другие подключения» (раздел «Прокси») под именем \"%s\".\n" "$IFACE_NAME"
 printf "\n"
