@@ -8,7 +8,6 @@
 set -e
 
 CONF_FILE="/opt/etc/opera-proxy.conf"
-INIT_SCRIPT="/opt/etc/init.d/S99opera-proxy"
 REPO_CONF="/opt/etc/opkg/sw.ext.io.conf"
 IFACE_NAME="Opera"
 
@@ -57,17 +56,17 @@ fi
 command -v opera-proxy > /dev/null 2>&1 || die "Бинарник opera-proxy не найден в /opt/bin"
 ok "Установлен: $(command -v opera-proxy)"
 
+# Глушим процесс, если opkg успел запустить его со своим нулевым конфигом
+killall opera-proxy 2>/dev/null || true
+
 # ── 5. Конфигурационный файл (принудительная перезапись) ──────
-info "Записываем конфигурационный файл $CONF_FILE..."
+info "Записываем наш конфигурационный файл $CONF_FILE..."
 
-if [ -f "$CONF_FILE" ]; then
-  warn "Старый конфиг обнаружен — перезаписываем новыми настройками..."
-fi
-
+# Полностью перезаписываем нулевой конфиг, оставленный opkg
 cat > "$CONF_FILE" << 'EOF'
 # ─────────────────────────────────────────────────────
 #  Конфигурация opera-proxy для Keenetic (SOCKS5)
-#  После изменений: /opt/etc/init.d/S99opera-proxy restart
+#  После изменений: /opt/etc/init.d/S*opera-proxy restart
 # ─────────────────────────────────────────────────────
 
 # Регион: EU (Европа), AS (Азия), AM (Америка)
@@ -89,31 +88,34 @@ SERVER_SELECT="random"
 
 # Уровень логов: 10=debug, 20=info, 30=warn, 40=error
 VERBOSITY="30"
-EOF
-ok "Конфиг успешно записан: $CONF_FILE"
 
-# ── 6. Init-скрипт ────────────────────────────────────────────
-info "Создаём init-скрипт $INIT_SCRIPT..."
+# ── Автогенерация OPTIONS для Entware init.d / rc.func ────────
+OPTIONS="-socks-mode -country $COUNTRY -bind-address ${BIND_ADDR}:${BIND_PORT} -server-selection $SERVER_SELECT -verbosity $VERBOSITY -bootstrap-dns $BOOTSTRAP_DNS"
+if [ "$OBFUSCATE" = "yes" ] && [ -n "$FAKE_SNI" ]; then
+    OPTIONS="$OPTIONS -fake-SNI $FAKE_SNI"
+fi
+EOF
+ok "Конфиг успешно перезаписан: $CONF_FILE"
+
+# ── 6. Init-скрипт (поиск и настройка единого скрипта) ─────────
+info "Настраиваем init-скрипт..."
+# Находим скрипт, который установил opkg, либо берем S99
+PKG_INIT=$(ls /opt/etc/init.d/S*opera-proxy 2>/dev/null | head -1)
+INIT_SCRIPT="${PKG_INIT:-/opt/etc/init.d/S99opera-proxy}"
+
+# Удаляем любые другие дублирующие файлы init-скриптов opera-proxy
+for s in /opt/etc/init.d/S*opera-proxy; do
+  [ -f "$s" ] && [ "$s" != "$INIT_SCRIPT" ] && rm -f "$s"
+done
+
 cat > "$INIT_SCRIPT" << 'INITEOF'
 #!/bin/sh
 
-[ -f /opt/etc/opera-proxy.conf ] && . /opt/etc/opera-proxy.conf
+. /opt/etc/opera-proxy.conf
 
 ENABLED=yes
 PROCS=opera-proxy
-
-OPTS="-socks-mode"
-[ -n "$COUNTRY" ] && OPTS="$OPTS -country $COUNTRY"
-[ -n "$BIND_ADDR" ] && [ -n "$BIND_PORT" ] && OPTS="$OPTS -bind-address ${BIND_ADDR}:${BIND_PORT}"
-[ -n "$VERBOSITY" ] && OPTS="$OPTS -verbosity $VERBOSITY"
-[ -n "$SERVER_SELECT" ] && OPTS="$OPTS -server-selection $SERVER_SELECT"
-[ -n "$BOOTSTRAP_DNS" ] && OPTS="$OPTS -bootstrap-dns $BOOTSTRAP_DNS"
-
-if [ "$OBFUSCATE" = "yes" ] && [ -n "$FAKE_SNI" ]; then
-    OPTS="$OPTS -fake-SNI $FAKE_SNI"
-fi
-
-ARGS="$OPTS"
+ARGS="$OPTIONS"
 PREARGS=""
 DESC="Opera Proxy SOCKS5"
 PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -121,7 +123,7 @@ PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/u
 . /opt/etc/init.d/rc.func
 INITEOF
 chmod 755 "$INIT_SCRIPT"
-ok "Init-скрипт готов"
+ok "Init-скрипт настроен: $INIT_SCRIPT"
 
 # ── 7. Очистка старого cron ───────────────────────────────────
 CRONTAB_FILE="/opt/var/spool/cron/crontabs/root"
@@ -186,7 +188,7 @@ else
   
   ndmc -c "interface $IFACE proxy upstream 127.0.0.1 $BIND_PORT" > /dev/null 2>&1
   ndmc -c "interface $IFACE description $IFACE_NAME" > /dev/null 2>&1
-  # ВКЛЮЧАЕМ ГАЛОЧКУ "Использовать для выхода в Интернет":
+  # Включаем «Использовать для выхода в Интернет»
   ndmc -c "interface $IFACE ip global auto" > /dev/null 2>&1
   ndmc -c "interface $IFACE up" > /dev/null 2>&1
   ndmc -c "system configuration save" > /dev/null 2>&1
