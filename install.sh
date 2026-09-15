@@ -57,13 +57,14 @@ fi
 command -v opera-proxy > /dev/null 2>&1 || die "Бинарник opera-proxy не найден в /opt/bin"
 ok "Установлен: $(command -v opera-proxy)"
 
-# ── 5. Конфигурационный файл ──────────────────────────────────
-info "Проверяем конфиг $CONF_FILE..."
+# ── 5. Конфигурационный файл (принудительная перезапись) ──────
+info "Записываем конфигурационный файл $CONF_FILE..."
 
 if [ -f "$CONF_FILE" ]; then
-  warn "Конфиг уже существует — оставляем текущий"
-else
-  cat > "$CONF_FILE" << 'EOF'
+  warn "Старый конфиг обнаружен — перезаписываем новыми настройками..."
+fi
+
+cat > "$CONF_FILE" << 'EOF'
 # ─────────────────────────────────────────────────────
 #  Конфигурация opera-proxy для Keenetic (SOCKS5)
 #  После изменений: /opt/etc/init.d/S99opera-proxy restart
@@ -89,8 +90,7 @@ SERVER_SELECT="random"
 # Уровень логов: 10=debug, 20=info, 30=warn, 40=error
 VERBOSITY="30"
 EOF
-  ok "Конфиг создан: $CONF_FILE"
-fi
+ok "Конфиг успешно записан: $CONF_FILE"
 
 # ── 6. Init-скрипт ────────────────────────────────────────────
 info "Создаём init-скрипт $INIT_SCRIPT..."
